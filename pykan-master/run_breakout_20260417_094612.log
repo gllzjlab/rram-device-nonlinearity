@@ -1,0 +1,9 @@
+
+--- Running Breakout Test with params: {'lr': 0.1, 'hidden_neurons': 10, 'grid_size': 5, 'coef_negtive': False, 'update_grid': True, 'physical_function': 'set', 'epochs': 300, 'mode': 'real', 'noise_scale': 0.5, 'alpha': 0.1} ---
+Using device: cuda
+Traceback (most recent call last):
+  File "/home/gaolili/deepLearning_project/pykan-master/tutorials/Example/Example_6_PDE_physical.py", line 189, in <module>
+    main()
+  File "/home/gaolili/deepLearning_project/pykan-master/tutorials/Example/Example_6_PDE_physical.py", line 152, in main
+    model = KAN(width=[dim, best_params['hidden_neurons'], 1], 
+TypeError: __init__() got an unexpected keyword argument 'extend_grid'

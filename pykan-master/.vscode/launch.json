@@ -1,0 +1,45 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "Python: Example_6_PDE_Physical",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${config:python.defaultInterpreterPath}",
+            "program": "${workspaceFolder}/tutorials/Example/Example_6_PDE_physical.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Example_6_PDE",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${config:python.defaultInterpreterPath}",
+            "program": "${workspaceFolder}/tutorials/Example/Example_6_PDE_interpretation.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Example_14_physical_V2 with args",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tutorials/Example/Example_14_knot_supervised_physical_V2.py",
+            "console": "integratedTerminal",
+            "args": ["-mode", "real", "-input_dim", "1", "-physical_function", "set", "-coef_negtive"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": true
+        }
+    ]
+}
