@@ -45,7 +45,7 @@ class KANLayer(nn.Module):
                  noise_scale=0.5, scale_base_mu=0.0, scale_base_sigma=1.0, scale_sp=1.0,
                  base_fun=torch.nn.SiLU(), grid_eps=0.02, grid_range=[-1, 1],
                  sp_trainable=True, sb_trainable=True, save_plot_data = True, device='cpu', sparse_init=False,
-                 is_extend_grid = True, coef_negative =True, activation_config = None):
+                 is_extend_grid = True, coef_negative =True, activation_config = None, use_c2 = False):
         ''''
         initialize a KANLayer
         
@@ -98,6 +98,15 @@ class KANLayer(nn.Module):
         self.in_dim = in_dim
         self.num = num
         self.k = k
+
+        # 根据 use_c2 参数绑定对应的基函数版本
+        self.use_c2 = use_c2
+        if self.use_c2:
+            self.coef2curve_func = coef2curve_C2
+            self.curve2coef_func = curve2coef_C2
+        else:
+            self.coef2curve_func = coef2curve
+            self.curve2coef_func = curve2coef
 
         grid = torch.linspace(grid_range[0], grid_range[1], steps=num + 1)[None,:].expand(self.in_dim, num+1)
         if is_extend_grid:
@@ -179,8 +188,8 @@ class KANLayer(nn.Module):
         preacts = x[:,None,:].clone().expand(batch, self.out_dim, self.in_dim)
             
         base = self.base_fun(x) # (batch, in_dim)
-        #y = coef2curve(x_eval=x, grid=self.grid, coef=self.coef, k=self.k, physical_basic=self.activation)
-        y = coef2curve_C2(x_eval=x, grid=self.grid, coef=self.coef, k=self.k, physical_basic=self.activation)
+        #y = coef2curve_C2(x_eval=x, grid=self.grid, coef=self.coef, k=self.k, physical_basic=self.activation)
+        y = self.coef2curve_func(x_eval=x, grid=self.grid, coef=self.coef, k=self.k, physical_basic=self.activation)
         postspline = y.clone().permute(0,2,1)
             
         y = self.scale_base[None,:,:] * base[:,:,None] + self.scale_sp[None,:,:] * y
@@ -237,7 +246,7 @@ class KANLayer(nn.Module):
         batch = x.shape[0]
         #x = torch.einsum('ij,k->ikj', x, torch.ones(self.out_dim, ).to(self.device)).reshape(batch, self.size).permute(1, 0)
         x_pos = torch.sort(x, dim=0)[0]
-        y_eval = coef2curve(x_pos, self.grid, self.coef, self.k, self.activation)
+        y_eval = self.coef2curve_func(x_pos, self.grid, self.coef, self.k, self.activation)
         num_interval = self.grid.shape[1] - 1 - 2*self.k
         
         def get_grid(num_interval):
@@ -255,12 +264,12 @@ class KANLayer(nn.Module):
         if mode == 'grid':
             sample_grid = get_grid(2*num_interval)
             x_pos = sample_grid.permute(1,0)
-            y_eval = coef2curve(x_pos, self.grid, self.coef, self.k)
+            y_eval = self.coef2curve_func(x_pos, self.grid, self.coef, self.k)
         
         self.grid.data = extend_grid(grid, k_extend=self.k)
         #print('x_pos 2', x_pos.shape)
         #print('y_eval 2', y_eval.shape)
-        self.coef.data = curve2coef(x_pos, y_eval, self.grid, self.k, self.activation)
+        self.coef.data = self.curve2coef_func(x_pos, y_eval, self.grid, self.k, self.activation)
 
     ########
 
@@ -311,7 +320,7 @@ class KANLayer(nn.Module):
         
         # shrink grid
         x_pos = torch.sort(x, dim=0)[0]
-        y_eval = coef2curve(x_pos, parent.grid, parent.coef, parent.k)
+        y_eval = parent.coef2curve_func(x_pos, parent.grid, parent.coef, parent.k, parent.activation)
         num_interval = self.grid.shape[1] - 1 - 2*self.k
         
         
@@ -350,11 +359,11 @@ class KANLayer(nn.Module):
         if mode == 'grid':
             sample_grid = get_grid(2*num_interval)
             x_pos = sample_grid.permute(1,0)
-            y_eval = coef2curve(x_pos, parent.grid, parent.coef, parent.k)
+            y_eval = parent.coef2curve_func(x_pos, parent.grid, parent.coef, parent.k)
         
         grid = extend_grid(grid, k_extend=self.k)
         self.grid.data = grid
-        self.coef.data = curve2coef(x_pos, y_eval, self.grid, self.k)
+        self.coef.data = self.curve2coef_func(x_pos, y_eval, self.grid, self.k)
 
     ############剪枝
     ##功能：在网络剪枝（Pruning）后，提取出依然活跃的神经元。

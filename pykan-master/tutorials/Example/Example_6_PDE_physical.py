@@ -15,23 +15,30 @@ def main():
     # --- 破局参数配置 ---
     # 我们挑选一组最有潜力的组合，并加入 noise_scale 和 alpha 调整
     best_params = {
-        'lr': 0.01,               # 大幅降低学习率，从 0.1 降到 0.01，防止 LBFGS 步子太大导致 NaN
-        'hidden_neurons': 5,      # 适当减小神经元数量，降低模型初期不稳定性
+        'lr': 0.001,               # Adam 用小学习率
+        'hidden_neurons': 2,
         'grid_size': 5,
         'coef_negtive': False,
-        'update_grid': True,
+        'update_grid': False,
         'physical_function': 'set',
-        'epochs': 200,
+        'epochs': 100,
+        'optimizer': 'Adam',       # Adam 替换 LBFGS
         'mode': 'real',
-        'noise_scale': 0.1,       # 降低噪声强度，从 0.5 降到 0.1，保持扰动但避免数值爆炸
-        'alpha': 0.01             # 恢复 alpha 为 0.01，先确保数值稳定再逐步加强物理约束
+        'noise_scale': 0.001,
+        'alpha': 0.01
     }
 
     results = []
     folder = "./figures"
     os.makedirs(folder, exist_ok=True)
+    # 训练日志文件
+    log_file = os.path.join(folder, "pde_training_C2_Adam.log")
+    log_f = open(log_file, 'w')
 
     print(f"\n--- Running Breakout Test with params: {best_params} ---")
+    log_f.write(f"Params: {best_params}\n")
+    log_f.write("epoch,pde_loss,bc_loss,l2,phase\n")
+    log_f.flush()
     
     # 构建 args 对象
     args_dict = {
@@ -114,39 +121,79 @@ def main():
             return func(x).sum(dim=0)
         return autograd.functional.jacobian(_func_sum, x, create_graph=create_graph).permute(1,0,2)
 
-    def train_model(model_instance, current_epochs, current_lr, should_update_grid=False):
-        optimizer = LBFGS(model_instance.parameters(), lr=current_lr, history_size=10, line_search_fn="strong_wolfe", tolerance_grad=1e-32, tolerance_change=1e-32, tolerance_ys=1e-32)
+    def train_model(model_instance, current_epochs, current_lr, should_update_grid=False, phase_name="initial", optimizer_type="LBFGS"):
+        if optimizer_type == "LBFGS":
+            optimizer = LBFGS(model_instance.parameters(), lr=current_lr, history_size=10, line_search_fn="strong_wolfe", tolerance_grad=1e-32, tolerance_change=1e-32, tolerance_ys=1e-32)
+        else:
+            optimizer = torch.optim.Adam(model_instance.parameters(), lr=current_lr)
+
         pbar = tqdm(range(current_epochs), desc='Training', ncols=100)
+        loss_record = []
+        loss_vals = [0.0, 0.0]   # [pde_loss_val, bc_loss_val]，可变容器避免闭包作用域问题
 
         for step in pbar:
-            def closure():
-                global pde_loss_val, bc_loss_val
+            if optimizer_type == "LBFGS":
+                def closure():
+                    optimizer.zero_grad()
+                    sol_D1_fun = lambda x: batch_jacobian(model_instance, x, create_graph=True)[:,0,:]
+                    sol_D2 = batch_jacobian(sol_D1_fun, x_i, create_graph=True)
+                    lap = torch.sum(torch.diagonal(sol_D2, dim1=1, dim2=2), dim=1, keepdim=True)
+                    pde_loss = torch.mean((lap - source_fun(x_i))**2)
+                    loss_vals[0] = pde_loss.item()
+                    bc_loss = torch.mean((model_instance(x_b) - sol_fun(x_b))**2)
+                    loss_vals[1] = bc_loss.item()
+                    (alpha * pde_loss + bc_loss).backward()
+                    return alpha * pde_loss + bc_loss
+
+                if should_update_grid and step % 5 == 0 and step < 50:
+                    model_instance.update_grid_from_samples(x_i)
+
+                optimizer.step(closure)
+            else:
                 optimizer.zero_grad()
-                
                 sol_D1_fun = lambda x: batch_jacobian(model_instance, x, create_graph=True)[:,0,:]
                 sol_D2 = batch_jacobian(sol_D1_fun, x_i, create_graph=True)
                 lap = torch.sum(torch.diagonal(sol_D2, dim1=1, dim2=2), dim=1, keepdim=True)
-                source = source_fun(x_i)
-                pde_loss = torch.mean((lap - source)**2)
-                pde_loss_val = pde_loss.item()
-
-                bc_pred = model_instance(x_b)
-                bc_true = sol_fun(x_b)
-                bc_loss = torch.mean((bc_pred - bc_true)**2)
-                bc_loss_val = bc_loss.item()
-
+                pde_loss = torch.mean((lap - source_fun(x_i))**2)
+                loss_vals[0] = pde_loss.item()
+                bc_loss = torch.mean((model_instance(x_b) - sol_fun(x_b))**2)
+                loss_vals[1] = bc_loss.item()
                 loss = alpha * pde_loss + bc_loss
                 loss.backward()
-                return loss
+                optimizer.step()
 
-            if should_update_grid and step % 5 == 0 and step < 50:
-                model_instance.update_grid_from_samples(x_i)
+            pde_loss_val, bc_loss_val = loss_vals
 
-            optimizer.step(closure)
             l2 = torch.mean((model_instance(x_i) - sol_fun(x_i))**2)
+            l2_val = l2.item()
 
-            pbar.set_description(f"pde_loss: {pde_loss_val:.2e} | bc_loss: {bc_loss_val:.2e} | l2: {l2.item():.2e}")
-        return pde_loss_val, bc_loss_val, l2.item()
+            # 记录每步 loss
+            loss_record.append((step, pde_loss_val, bc_loss_val, l2_val))
+            log_f.write(f"{step},{pde_loss_val:.6e},{bc_loss_val:.6e},{l2_val:.6e},{phase_name}\n")
+            if step % 10 == 0:
+                log_f.flush()
+
+            pbar.set_description(f"pde_loss: {pde_loss_val:.2e} | bc_loss: {bc_loss_val:.2e} | l2: {l2_val:.2e}")
+        
+        # 保存该阶段 loss 曲线图
+        steps_arr, pde_arr, bc_arr, l2_arr = zip(*loss_record)
+        plt.figure(figsize=(10,4))
+        plt.subplot(1,2,1)
+        plt.plot(steps_arr, pde_arr, label='PDE Loss')
+        plt.plot(steps_arr, bc_arr, label='BC Loss')
+        plt.yscale('log')
+        plt.xlabel('Step'); plt.ylabel('Loss')
+        plt.legend(); plt.title(f'{phase_name} — Loss')
+        plt.subplot(1,2,2)
+        plt.plot(steps_arr, l2_arr, label='L2 Error', color='green')
+        plt.yscale('log')
+        plt.xlabel('Step'); plt.ylabel('L2 Error')
+        plt.legend(); plt.title(f'{phase_name} — L2 Error')
+        plt.tight_layout()
+        plt.savefig(os.path.join(folder, f'pde_loss_{phase_name}.png'), dpi=150)
+        plt.close()
+        
+        return pde_loss_val, bc_loss_val, l2_val
 
     # 使用所选参数初始化模型，并加入 noise_scale
     model = KAN(width=[dim, best_params['hidden_neurons'], 1], 
@@ -156,10 +203,16 @@ def main():
                 device=device, 
                 activation_config=activation_config, 
                 is_extend_grid=best_params['update_grid'],
-                noise_scale=best_params['noise_scale'])
+                noise_scale=best_params['noise_scale'],
+                use_c2=True)
 
     print("Starting breakout initial training...")
     initial_pde_loss, initial_bc_loss, initial_l2 = train_model(model, best_params['epochs'], best_params['lr'], should_update_grid=best_params['update_grid'])
+
+    # Phase1 激活函数可视化
+    print("Plotting KAN activation functions (Phase1)...")
+    model.plot(beta=10, folder=folder, save_name='PDE_activation_function_C2_Adam_phase1')
+    print(f"Activation plot saved to: {folder}/")
 
     # 暂时恢复符号回归以查看最终结果
     print("Applying symbolic logic...")
@@ -172,7 +225,12 @@ def main():
         model.fix_symbolic(1, i, 0, 'sin')
 
     print("Starting training after applying symbolic functions...")
-    final_pde_loss, final_bc_loss, final_l2 = train_model(model, best_params['epochs'], best_params['lr'])
+    final_pde_loss, final_bc_loss, final_l2 = train_model(model, best_params['epochs'], best_params['lr'], phase_name="phase2_symbolic", optimizer_type=best_params['optimizer'])
+
+    # Phase2 激活函数可视化
+    print("Plotting KAN activation functions (Phase2)...")
+    model.plot(beta=10, folder=folder, save_name='PDE_activation_function_C2_Adam_phase2')
+    print(f"Activation plot saved to: {folder}/")
 
     print("Deriving symbolic formula...")
     formula = model.symbolic_formula()[0][0]
@@ -184,6 +242,25 @@ def main():
     print(f"Final BC Loss: {final_bc_loss:.2e}")
     print(f"Final L2 Error: {final_l2:.2e}")
     print(f"Final Formula: {final_formula_str}")
+
+    # 保存结果到文件
+    result_file = os.path.join(folder, "pde_results_C2_Adam.txt")
+    with open(result_file, 'w') as f:
+        f.write(f"=== PDE Physical KAN (use_c2=True) Results ===\n")
+        f.write(f"Params: {best_params}\n")
+        f.write(f"Phase1 — Initial PDE Loss: {initial_pde_loss:.6e}\n")
+        f.write(f"Phase1 — Initial BC Loss:  {initial_bc_loss:.6e}\n")
+        f.write(f"Phase1 — Initial L2 Error: {initial_l2:.6e}\n")
+        f.write(f"Phase2 — Final PDE Loss:   {final_pde_loss:.6e}\n")
+        f.write(f"Phase2 — Final BC Loss:    {final_bc_loss:.6e}\n")
+        f.write(f"Phase2 — Final L2 Error:   {final_l2:.6e}\n")
+        f.write(f"Final Formula: {final_formula_str}\n")
+    print(f"Results saved to: {result_file}")
+
+    # 关闭日志文件
+    log_f.write(f"# Final: pde_loss={final_pde_loss:.6e}, bc_loss={final_bc_loss:.6e}, l2={final_l2:.6e}, formula={final_formula_str}\n")
+    log_f.close()
+    print(f"Training log saved to: {log_file}")
 
 if __name__ == "__main__":
     main()

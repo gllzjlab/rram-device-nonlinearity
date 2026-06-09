@@ -316,4 +316,8 @@ def curve2coef_C2(x_eval, y_eval, grid, k, physical_basic):
         print('lstsq failed in C2')
         coef = torch.zeros(in_dim, out_dim, n_coef).to(mat.device)
 
+    # 保护：如果 lstsq 返回 NaN（矩阵病态时可能非异常返回），替换为零
+    if torch.isnan(coef).any():
+        coef = torch.zeros(in_dim, out_dim, n_coef).to(mat.device)
+
     return coef
