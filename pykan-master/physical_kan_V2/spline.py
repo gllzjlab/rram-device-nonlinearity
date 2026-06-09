@@ -320,4 +320,76 @@ def curve2coef_C2(x_eval, y_eval, grid, k, physical_basic):
     if torch.isnan(coef).any():
         coef = torch.zeros(in_dim, out_dim, n_coef).to(mat.device)
 
+
+# ======================================================================
+# C1 三次 Hermite 基函数 (smoothstep, 一阶光滑)
+# s(t) = 3t² - 2t³,  满足 s(0)=0,s(1)=1,s'(0)=0,s'(1)=0
+# ======================================================================
+
+def B_batch_physical_shared_C1(x, grid, physical_basic):
+    '''
+    一阶光滑（C1）物理基函数：使用三次多项式（Cubic Hermite Spline）代替线性插值。
+    保证在网格点处的一阶导数为 0，从而实现全局 C1 连续性。
+
+    Args:
+        x: (batch, in_dim)
+        grid: (in_dim, G + 1)
+        physical_basic: 物理激活函数类
+    '''
+    batch_size, in_dim = x.shape
+    num_grid_points = grid.shape[1]
+
+    phi = physical_basic(x)  # (batch, in_dim)
+
+    grid_bases = torch.zeros(batch_size, in_dim, num_grid_points, device=x.device)
+    idx = torch.searchsorted(grid, x.T.contiguous()).T - 1
+    idx = torch.clamp(idx, 0, num_grid_points - 2)
+
+    grid_3d = grid.unsqueeze(0).expand(batch_size, -1, -1)
+    idx_3d = idx.unsqueeze(-1)
+    t_low = torch.gather(grid_3d, 2, idx_3d).squeeze(-1)
+    t_high = torch.gather(grid_3d, 2, (idx + 1).unsqueeze(-1)).squeeze(-1)
+    ratio = (x - t_low) / (t_high - t_low + 1e-6)
+
+    # 三次 Hermite: s(t) = 3t² - 2t³ (smoothstep)
+    # 满足: s(0)=0, s'(0)=0; s(1)=1, s'(1)=0
+    s = 3 * ratio**2 - 2 * ratio**3
+
+    grid_bases.scatter_(2, idx.unsqueeze(2), (1 - s).unsqueeze(2))
+    grid_bases.scatter_(2, (idx + 1).unsqueeze(2), s.unsqueeze(2))
+
+    combined = grid_bases * phi.unsqueeze(-1)
+    return combined
+
+
+def coef2curve_C1(x_eval, grid, coef, k, physical_basic, device="cpu"):
+    '''使用 C1 光滑基函数的曲线计算'''
+    b_splines = B_batch_physical_shared_C1(x_eval, grid, physical_basic)
+    y_eval = torch.einsum('ijk,jlk->ijl', b_splines, coef.to(b_splines.device))
+    return y_eval
+
+
+def curve2coef_C1(x_eval, y_eval, grid, k, physical_basic):
+    '''使用 C1 光滑基函数的系数拟合'''
+    batch = x_eval.shape[0]
+    in_dim = x_eval.shape[1]
+    out_dim = y_eval.shape[2]
+    n_coef = grid.shape[1]
+
+    mat = B_batch_physical_shared_C1(x_eval, grid, physical_basic)
+    mat = mat.permute(1, 0, 2)[:, None, :, :].expand(in_dim, out_dim, batch, n_coef)
+
+    y_eval = y_eval.permute(1, 2, 0).unsqueeze(dim=3)
+
+    try:
+        coef = torch.linalg.lstsq(mat, y_eval).solution[:, :, :, 0]
+    except:
+        print('lstsq failed in C1')
+        coef = torch.zeros(in_dim, out_dim, n_coef).to(mat.device)
+
+    if torch.isnan(coef).any():
+        coef = torch.zeros(in_dim, out_dim, n_coef).to(mat.device)
+
+    return coef
+
     return coef

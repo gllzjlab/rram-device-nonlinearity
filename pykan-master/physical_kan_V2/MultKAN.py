@@ -98,7 +98,7 @@ class MultKAN(nn.Module):
                  affine_trainable=False, grid_eps=0.02, grid_range=[-1, 1], sp_trainable=True,
                  sb_trainable=True, seed=1, save_act=True, sparse_init=False, auto_save=True,
                  first_init=True, ckpt_path='./model', state_id=0, round=0, device='cpu',
-                 is_extend_grid = True, coef_negative = False, activation_config = None, use_c2 = False):
+                 is_extend_grid = True, coef_negative = False, activation_config = None, use_c2 = False, use_c1_cubic = False):
         '''
         initalize a KAN model
         
@@ -168,6 +168,7 @@ class MultKAN(nn.Module):
         self.is_extend_grid = is_extend_grid
         self.coef_negative = coef_negative
         self.use_c2 = use_c2
+        self.use_c1_cubic = use_c1_cubic
         self.activation_config = activation_config
         self.act_fun = []
         self.depth = len(width) - 1
@@ -225,7 +226,7 @@ class MultKAN(nn.Module):
                                 base_fun=base_fun, grid_eps=grid_eps, grid_range=grid_range,
                                 sp_trainable=sp_trainable, sb_trainable=sb_trainable, sparse_init=sparse_init,
                                 is_extend_grid=self.is_extend_grid, coef_negative=self.coef_negative, activation_config=self.activation_config,
-                                use_c2=use_c2
+                                use_c2=use_c2, use_c1_cubic=use_c1_cubic
                                 )
             self.act_fun.append(sp_batch)
 
@@ -2431,7 +2432,7 @@ class MultKAN(nn.Module):
 
         # add kanlayer, set mask to zero
         dim_out = self.width_in[-1]
-        layer = KANLayer(dim_out, dim_out, num=self.grid, k=self.k, use_c2=self.use_c2)
+        layer = KANLayer(dim_out, dim_out, num=self.grid, k=self.k, use_c2=self.use_c2, use_c1_cubic=self.use_c1_cubic)
         layer.mask *= 0.
         self.act_fun.append(layer)
 
@@ -2502,7 +2503,7 @@ class MultKAN(nn.Module):
                                 new.affine.data[j][i] = old.affine.data[j-n_added_nodes][i]
 
                     self.symbolic_fun[l] = new
-                    self.act_fun[l] = KANLayer(in_dim, out_dim + n_added_nodes, num=self.grid, k=self.k, use_c2=self.use_c2)
+                    self.act_fun[l] = KANLayer(in_dim, out_dim + n_added_nodes, num=self.grid, k=self.k, use_c2=self.use_c2, use_c1_cubic=self.use_c1_cubic)
                     self.act_fun[l].mask *= 0.
 
                     self.node_scale[l].data = torch.cat([torch.ones(n_added_nodes, device=self.device), self.node_scale[l].data])
@@ -2533,7 +2534,7 @@ class MultKAN(nn.Module):
                                 new.affine.data[j][i] = old.affine.data[j][i-n_added_nodes]
 
                     self.symbolic_fun[l] = new
-                    self.act_fun[l] = KANLayer(in_dim + n_added_nodes, out_dim, num=self.grid, k=self.k, use_c2=self.use_c2)
+                    self.act_fun[l] = KANLayer(in_dim + n_added_nodes, out_dim, num=self.grid, k=self.k, use_c2=self.use_c2, use_c1_cubic=self.use_c1_cubic)
                     self.act_fun[l].mask *= 0.
 
 
@@ -2564,7 +2565,7 @@ class MultKAN(nn.Module):
                                 new.affine.data[j][i] = old.affine.data[j][i]
 
                     self.symbolic_fun[l] = new
-                    self.act_fun[l] = KANLayer(in_dim, out_dim + n_added_subnodes, num=self.grid, k=self.k, use_c2=self.use_c2)
+                    self.act_fun[l] = KANLayer(in_dim, out_dim + n_added_subnodes, num=self.grid, k=self.k, use_c2=self.use_c2, use_c1_cubic=self.use_c1_cubic)
                     self.act_fun[l].mask *= 0.
 
                     self.node_scale[l].data = torch.cat([self.node_scale[l].data, torch.ones(n_added_nodes, device=self.device)])
@@ -2593,7 +2594,7 @@ class MultKAN(nn.Module):
                                 new.affine.data[j][i] = old.affine.data[j][i]
 
                     self.symbolic_fun[l] = new
-                    self.act_fun[l] = KANLayer(in_dim + n_added_nodes, out_dim, num=self.grid, k=self.k, use_c2=self.use_c2)
+                    self.act_fun[l] = KANLayer(in_dim + n_added_nodes, out_dim, num=self.grid, k=self.k, use_c2=self.use_c2, use_c1_cubic=self.use_c1_cubic)
                     self.act_fun[l].mask *= 0.
 
         _expand(layer_id-1, n_added_nodes, sum_bool, mult_arity, added_dim='out')

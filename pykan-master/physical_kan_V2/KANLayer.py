@@ -45,7 +45,7 @@ class KANLayer(nn.Module):
                  noise_scale=0.5, scale_base_mu=0.0, scale_base_sigma=1.0, scale_sp=1.0,
                  base_fun=torch.nn.SiLU(), grid_eps=0.02, grid_range=[-1, 1],
                  sp_trainable=True, sb_trainable=True, save_plot_data = True, device='cpu', sparse_init=False,
-                 is_extend_grid = True, coef_negative =True, activation_config = None, use_c2 = False):
+                 is_extend_grid = True, coef_negative =True, activation_config = None, use_c2 = False, use_c1_cubic = False):
         ''''
         initialize a KANLayer
         
@@ -99,11 +99,15 @@ class KANLayer(nn.Module):
         self.num = num
         self.k = k
 
-        # 根据 use_c2 参数绑定对应的基函数版本
+        # 根据 use_c2/use_c1_cubic 参数绑定对应的基函数版本
         self.use_c2 = use_c2
+        self.use_c1_cubic = use_c1_cubic
         if self.use_c2:
             self.coef2curve_func = coef2curve_C2
             self.curve2coef_func = curve2coef_C2
+        elif self.use_c1_cubic:
+            self.coef2curve_func = coef2curve_C1
+            self.curve2coef_func = curve2coef_C1
         else:
             self.coef2curve_func = coef2curve
             self.curve2coef_func = curve2coef
