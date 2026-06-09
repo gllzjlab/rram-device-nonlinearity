@@ -67,6 +67,21 @@ Phase2 L2         —          ★4.84e-08★  1.79e-01
 
 hidden=3 精确求解(!)，hidden=4 过拟合。原版+网格自适应在 Phase1 远超 C2.
 
+D. 原版 KAN 100ep (hidden=2/3, grid=5, lr=1, update_grid=每5步, 仅前50ep)
+────────────────────────────────────────────────────────────────────────────────
+                   20ep         100ep          20ep           100ep
+                  hidden=2     hidden=2       hidden=3       hidden=3
+────────────────────────────────────────────────────────────────
+Phase1 PDE         2.49e+00    1.05e+01       5.14e+00       3.72e+00
+Phase1 L2          —           2.93e-02       4.42e-02       3.02e-02
+────────────────────────────────────────────────
+Phase2 PDE         4.34e+01    9.49e+01      ★2.51e-06★     4.69e+01
+Phase2 L2          —           2.44e-01      ★4.84e-08★     2.78e-01
+
+更多步数反而更差！前50ep的10次网格更新反复扰动模型，Phase1终点更差。
+到了Phase2 fix_symbolic后，参数从更差的起点出发，100步也找不回精确解。
+20ep + 4次网格更新是原版KAN的最佳平衡点。
+
 ================================================================================
 三、符号公式对比
 ================================================================================
@@ -106,12 +121,15 @@ C2 Physical tuned (五次Hermite, hidden=3, grid=8) 🏆:
 7.  网格更新对C2无效但原版受益巨大: 原版 Phase1(2.5) vs C2 Phase1(22.3)
 8.  C2 tuned 公式比原版 hidden=3 更干净: 无多余抵消项，直接输出核心表达式
 9.  Adam不适用于 C2 PDE 训练，LBFGS+lr=0.1 最优
+10. 原版KAN增加epochs反而不利: 10次网格更新(100ep)比4次(20ep)更差
+11. 网格自适应是把双刃剑: 对原版高效，对光滑基函数(C1/C2)反而引发NaN
 
 ================================================================================
 五、输出文件清单 (./figures/)
 ================================================================================
 原版:    PDE_activation_function_original*.png, pde_results_original.txt
 原版_h:  PDE_original_h*_phase*.png, pde_results_original_hidden.txt
+原版_100ep: PDE_original_h*_phase*_100ep.png, pde_results_original_100ep.txt
 C1:      PDE_activation_function_C1_phase*.png, pde_results_C1.txt
 C2:      PDE_activation_function_C2_phase*.png, pde_results_C2.txt
 C2_100:  PDE_activation_function_C2_100ep_phase*.png, pde_results_C2_100ep.txt
