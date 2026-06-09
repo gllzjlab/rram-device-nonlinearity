@@ -25,14 +25,21 @@ Phase2 L2 Error   —          1.10e-01   1.15e-01   1.17e-01  1.09e-01   2.16e-
 二、超参优化实验
 ================================================================================
 
-A. hidden=3, grid=8, alpha=0.1 (★ 最优配置)
+A. hidden=3, grid=8, alpha=0.1, Physical KAN 插值方式对比
 ────────────────────────────────────────────────────────────────────────────────
-Phase1 PDE Loss:   2.23e+01
-Phase1 BC Loss:    2.69e-01
-Phase1 L2 Error:   1.19e-01
-Phase2 PDE Loss:   7.20e-08  ← 趋近于0，精确求解！
-Phase2 BC Loss:    9.11e-10
-Phase2 L2 Error:   5.54e-10  ← 5.5e-10，几乎完美
+                 C0(线性)    C1(三次)    C2(五次)      ← 插值类型
+                 —           Hermite     Hermite
+────────────────────────────────────────────────
+Phase1 PDE        4.50e+01    3.27e+01    ★2.23e+01★
+Phase1 BC         2.19e-01    1.90e-01    2.69e-01
+Phase1 L2         1.70e-01    6.12e-02    1.19e-01
+────────────────────────────────────────────────
+Phase2 PDE        4.17e+01    ★4.15e-04★  ★7.20e-08★
+Phase2 BC         1.52e-01    1.33e-05    9.11e-10
+Phase2 L2         1.24e-01    ★1.22e-05★  ★5.54e-10★
+
+C0→C1→C2 光滑度递增，Phase2 精度逐步提升: 1e-1 → 1e-5 → 1e-10
+C1 三次是性价比甜点：数值稳定(可媲美C0)，精度比C0高4个量级
 
 B. hidden=2, alpha=0.1, 不同 grid 对比
 ────────────────────────────────────────────────────────────────────────────────
@@ -74,9 +81,13 @@ Ground Truth: f(x₁,x₂) = sin(πx₁) · sin(πx₂)
   + 1.509·sin(0.026x₁+0.002x₂+4.707) - 1.508 [可抵消项]
   → 主项 = 0.5·sin(-πx₁+πx₂+5π/2) + 0.5·sin(πx₁+πx₂+3π/2) = sin(πx₁)·sin(πx₂) ✓
 
-C2 Physical tuned (hidden=3, grid=8, alpha=0.1) 🏆:
+C1 cubic (三次Hermite, hidden=3, grid=8):
+  -0.5002·sin(3.141x₁-3.141x₂+4.713) - 0.4997·sin(3.143x₁+3.142x₂-4.712) + 3.7e-4
+  → ≈ sin(πx₁)·sin(πx₂) ✓  (L2=1.22e-5，C2的约1/10000)
+
+C2 Physical tuned (五次Hermite, hidden=3, grid=8) 🏆:
   0.500·sin(-3.1416x₁+3.1416x₂+1.571) - 0.500·sin(3.1416x₁+3.1416x₂+1.571) + 2e-5
-  → = sin(πx₁)·sin(πx₂) ✓  (L2=5.5e-10，比原版更干净无多余项)
+  → = sin(πx₁)·sin(πx₂) ✓  (L2=5.5e-10，更干净无多余项)
 
 原版 KAN hidden=4 (过拟合):
   40.4·sin(0.076x₁+0.114x₂+1.517) + 2.12·sin(0.135x₁+0.194x₂-8.442)
@@ -107,6 +118,7 @@ C2_100:  PDE_activation_function_C2_100ep_phase*.png, pde_results_C2_100ep.txt
 C2_Grid: PDE_activation_function_C2_optim_phase*.png, pde_results_C2_optim.txt
 C2_Adam: PDE_activation_function_C2_Adam_phase*.png, pde_results_C2_Adam.txt
 C2_tuned:PDE_activation_function_C2_tuned_phase*.png, pde_results_C2_tuned.txt
+C1_cubic:PDE_activation_function_C1cubic_phase2.png, pde_results_C1cubic.txt
 Grid对比: pde_grid_comparison.txt, PDE_C2_grid*_phase2.png
 总览:    pde_comparison_summary.txt
 ================================================================================
